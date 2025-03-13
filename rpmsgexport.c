@@ -28,7 +28,13 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
+/*
+ * Copyright (c) 2025, NXP
+ */
+
 #include <sys/ioctl.h>
+#include <linux/rpmsg.h>
 
 #include <err.h>
 #include <fcntl.h>
@@ -38,20 +44,31 @@
 #include <unistd.h>
 #include <string.h>
 
-struct rpmsg_endpoint_info {
-	char name[32];
-	uint32_t src;
-	uint32_t dst;
-};
-
-#define RPMSG_CREATE_EPT_IOCTL  _IOW(0xb5, 0x1, struct rpmsg_endpoint_info)
-
 static void usage(void)
 {
 	extern char *__progname;
 
-	fprintf(stderr, "%s <ctrl> <name> [<src> <dst>]\n", __progname);
-	exit(1);
+	fprintf(stderr, "%s <ctrl> <name> <src> <dst>\n", __progname);
+	exit(EXIT_FAILURE);
+}
+
+static uint32_t get_value(char *text)
+{
+	char *endptr;
+	uint32_t value;
+
+	if (text[0]=='0' && text[1]=='x') {
+		value = strtoul(text+2, &endptr, 16);
+	} else {
+		value = strtoul(text, &endptr, 10);
+	}
+
+	if (*endptr) {
+		usage();
+	}
+
+	return value;
+
 }
 
 int main(int argc, char **argv)
@@ -59,36 +76,28 @@ int main(int argc, char **argv)
 	struct rpmsg_endpoint_info ept;
 	int ret;
 	int fd;
-	char *endptr;
-
-	if (argc != 3 && argc != 5)
-		usage();
-
-	fd = open(argv[1], O_RDWR);
-	if (fd < 0)
-		err(1, "failed to open %s\n", argv[1]);
-
-	strncpy(ept.name, argv[2], sizeof(ept.name));
-	ept.name[sizeof(ept.name)-1] = '\0';
 
 	if (argc == 5) {
-		ept.src = strtoul(argv[3], &endptr, 10);
+		strncpy(ept.name, argv[2], sizeof(ept.name));
+		ept.name[sizeof(ept.name)-1] = '\0';
+		ept.src = get_value(argv[3]);
+		ept.dst = get_value(argv[4]);
+	} else {
+		usage();
+	}
 
-		if (*endptr)
-			usage();
-
-		ept.dst = strtoul(argv[4], &endptr, 10);
-
-		if (*endptr)
-			usage();
+	fd = open(argv[1], O_RDWR);
+	if (fd < 0) {
+		err(1, "failed to open %s\n", argv[1]);
 	}
 
 	ret = ioctl(fd, RPMSG_CREATE_EPT_IOCTL, &ept);
 	if (ret < 0) {
-		fprintf(stderr, "failed to create endpoint");
-		exit(1);
+		fprintf(stderr, "failed to create endpoint\n");
+		close(fd);
+		return EXIT_FAILURE;
 	}
 
 	close(fd);
-	return 0;
+	return EXIT_SUCCESS;
 }
